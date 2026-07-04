@@ -16,7 +16,7 @@ export type BackupTransaction = {
   execAsync: (sql: string) => Promise<unknown>
   runAsync: (
     sql: string,
-    params: readonly (string | number | null)[],
+    params: (string | number | null)[],
   ) => Promise<unknown>
 }
 
@@ -25,7 +25,7 @@ export type BackupDatabase = {
   getAllAsync: <T>(sql: string) => Promise<T[]>
   runAsync: (
     sql: string,
-    params: readonly (string | number | null)[],
+    params: (string | number | null)[],
   ) => Promise<unknown>
   withExclusiveTransactionAsync: (
     task: (txn: BackupTransaction) => Promise<void>,
