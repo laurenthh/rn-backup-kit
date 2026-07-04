@@ -11,4 +11,5 @@ export {
   importDatabaseSnapshot,
   type BackupDatabase,
   type BackupTableConfig,
+  type BackupTransaction,
 } from './database.js'

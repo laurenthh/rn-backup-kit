@@ -15,11 +15,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
-  "peerDependencies": {
-    "expo-sqlite": ">=55"
-  },
   "devDependencies": {
-    "expo-sqlite": "~55.0.16",
     "typescript": "~5.9.3",
     "vitest": "^3.0.5"
   }

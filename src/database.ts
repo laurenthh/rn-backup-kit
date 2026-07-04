@@ -1,11 +1,36 @@
-import type { SQLiteDatabase } from 'expo-sqlite'
-
 import { BACKUP_FORMAT_VERSION, type BackupSnapshot } from './envelope.js'
 
-export type BackupDatabase = Pick<
-  SQLiteDatabase,
-  'execAsync' | 'getAllAsync' | 'runAsync' | 'withExclusiveTransactionAsync'
->
+/**
+ * The minimal, structural subset of `expo-sqlite`'s `SQLiteDatabase` this
+ * package needs. Deliberately hand-written rather than imported from
+ * `expo-sqlite` directly: when this package is installed as a `file:`/git
+ * dependency alongside a consumer that has its own separate `expo-sqlite`
+ * install, TypeScript treats the two copies' `SQLiteDatabase` as distinct
+ * nominal types (private fields on `SQLiteStatement` break structural
+ * equality across installs) — importing the real type here would make every
+ * consumer's actual `SQLiteDatabase` fail to satisfy `BackupDatabase`. A
+ * plain structural type has no such identity, so any real `SQLiteDatabase`
+ * (from any copy of the package) satisfies it.
+ */
+export type BackupTransaction = {
+  execAsync: (sql: string) => Promise<unknown>
+  runAsync: (
+    sql: string,
+    params?: readonly (string | number | null)[],
+  ) => Promise<unknown>
+}
+
+export type BackupDatabase = {
+  execAsync: (sql: string) => Promise<unknown>
+  getAllAsync: <T>(sql: string) => Promise<T[]>
+  runAsync: (
+    sql: string,
+    params?: readonly (string | number | null)[],
+  ) => Promise<unknown>
+  withExclusiveTransactionAsync: (
+    task: (txn: BackupTransaction) => Promise<void>,
+  ) => Promise<void>
+}
 
 export type BackupTableConfig = {
   /** Database handle to read/write. */
