@@ -1,0 +1,26 @@
+{
+  "name": "rn-backup-kit",
+  "version": "1.0.0",
+  "description": "Shared backup/restore module for Expo/SQLite React Native apps",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "expo-sqlite": ">=55"
+  },
+  "devDependencies": {
+    "expo-sqlite": "~55.0.16",
+    "typescript": "~5.9.3",
+    "vitest": "^3.0.5"
+  }
+}
