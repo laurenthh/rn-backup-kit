@@ -4,7 +4,7 @@ export {
   serializeSnapshot,
   type BackupSnapshot,
   type ParseSnapshotResult,
-} from './envelope.js'
+} from './envelope'
 
 export {
   exportDatabaseSnapshot,
@@ -12,4 +12,4 @@ export {
   type BackupDatabase,
   type BackupTableConfig,
   type BackupTransaction,
-} from './database.js'
+} from './database'

@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "Shared backup/restore module for Expo/SQLite React Native apps",
   "license": "MIT",
-  "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [

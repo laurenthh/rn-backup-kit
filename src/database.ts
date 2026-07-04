@@ -1,4 +1,4 @@
-import { BACKUP_FORMAT_VERSION, type BackupSnapshot } from './envelope.js'
+import { BACKUP_FORMAT_VERSION, type BackupSnapshot } from './envelope'
 
 /**
  * The minimal, structural subset of `expo-sqlite`'s `SQLiteDatabase` this
