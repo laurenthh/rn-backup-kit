@@ -124,15 +124,45 @@ export async function uploadAttachments(config: {
  * uses this to rewrite the corresponding DB rows' URI columns. This module
  * never touches a database; it only orchestrates file transfer.
  */
+// Manifest keys arrive from a downloaded backup — untrusted input — and get
+// handed to the caller's `writeFile`, which typically derives a local file
+// path from them. A tampered manifest with a key like `../../app.bundle`
+// could escape the caller's attachment directory. Reject anything that isn't
+// a plain relative key of safe path segments.
+function assertSafeManifestKey(key: string): void {
+  const segments = key.split('/')
+  const ok =
+    key.length > 0 &&
+    !key.startsWith('/') &&
+    !key.includes('\\') &&
+    segments.every((s) => s.length > 0 && s !== '.' && s !== '..' && !/[\x00-\x1f]/.test(s))
+  if (!ok) {
+    throw new Error(`Unsafe attachment key in manifest: ${JSON.stringify(key)}`)
+  }
+}
+
+// Same rationale as envelope.ts's MAX_SNAPSHOT_BYTES: a legitimate
+// attachment is a compressed photo or a document, well under this; a
+// tampered bucket could serve an arbitrarily large body and OOM the app.
+export const MAX_ATTACHMENT_BYTES = 200 * 1024 * 1024
+
 export async function downloadAttachments(config: {
   manifest: readonly AttachmentManifestEntry[]
   s3: S3Config
   writeFile: (key: string, data: string) => Promise<string>
+  maxBytesPerAttachment?: number
 }): Promise<Map<string, string>> {
+  const maxBytes = config.maxBytesPerAttachment ?? MAX_ATTACHMENT_BYTES
   const result = new Map<string, string>()
   for (const entry of config.manifest) {
+    assertSafeManifestKey(entry.key)
     const fullKey = withPathPrefix(config.s3, entry.key)
     const data = await downloadFromS3(config.s3, fullKey)
+    if (data.length > maxBytes) {
+      throw new Error(
+        `Attachment ${entry.key} is too large (over ${Math.round(maxBytes / (1024 * 1024))} MB).`,
+      )
+    }
     const newUri = await config.writeFile(entry.key, data)
     result.set(entry.key, newUri)
   }

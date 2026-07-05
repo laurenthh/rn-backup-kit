@@ -156,3 +156,37 @@ describe('downloadAttachments', () => {
     )
   })
 })
+
+describe('downloadAttachments hardening', () => {
+  it('rejects manifest keys with path traversal segments', async () => {
+    stubFetch(() => new Response('data'))
+    await expect(
+      downloadAttachments({
+        manifest: [
+          {
+            table: 'documents',
+            rowId: 1,
+            column: 'file_uri',
+            key: 'attachments/../../app.bundle',
+          },
+        ],
+        s3,
+        writeFile: async () => 'file:///should-not-be-called',
+      }),
+    ).rejects.toThrow('Unsafe attachment key')
+  })
+
+  it('rejects oversized attachment bodies before writeFile', async () => {
+    stubFetch(() => new Response('x'.repeat(64)))
+    await expect(
+      downloadAttachments({
+        manifest: [
+          { table: 'documents', rowId: 1, column: 'file_uri', key: 'attachments/doc.pdf' },
+        ],
+        s3,
+        writeFile: async () => 'file:///should-not-be-called',
+        maxBytesPerAttachment: 16,
+      }),
+    ).rejects.toThrow('too large')
+  })
+})
