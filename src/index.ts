@@ -14,4 +14,19 @@ export {
   type BackupTransaction,
 } from './database'
 
-export { uploadToS3, listLatestS3Key, downloadFromS3, type S3Config } from './s3'
+export {
+  uploadToS3,
+  listLatestS3Key,
+  downloadFromS3,
+  withPathPrefix,
+  type S3Config,
+} from './s3'
+
+export {
+  buildAttachmentManifest,
+  uploadAttachments,
+  downloadAttachments,
+  type FileAttachment,
+  type AttachmentManifestEntry,
+  type CompressFn,
+} from './attachments'

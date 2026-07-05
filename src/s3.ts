@@ -134,7 +134,18 @@ async function signS3Request(
   return { url, headers: { ...headers, Authorization: authorization } }
 }
 
-function withPathPrefix(config: S3Config, key: string): string {
+/**
+ * Resolves a bare key against `config.pathPrefix`, the same way `uploadToS3`
+ * does internally. Exported so callers that need to predict or replicate the
+ * actual stored object key — e.g. `downloadAttachments`, which calls
+ * `downloadFromS3` directly rather than through `uploadToS3`/`listLatestS3Key`
+ * — stay consistent with where `uploadToS3` actually put the object.
+ * `downloadFromS3`/`listLatestS3Key` deliberately do NOT apply this
+ * themselves: `listLatestS3Key`'s result is already a full key straight from
+ * S3's own listing, and re-folding a prefix into an already-full key would
+ * double it.
+ */
+export function withPathPrefix(config: S3Config, key: string): string {
   return config.pathPrefix ? `${config.pathPrefix.replace(/\/+$/, '')}/${key}` : key
 }
 
