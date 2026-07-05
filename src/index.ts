@@ -13,3 +13,5 @@ export {
   type BackupTableConfig,
   type BackupTransaction,
 } from './database'
+
+export { uploadToS3, listLatestS3Key, downloadFromS3, type S3Config } from './s3'
