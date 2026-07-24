@@ -1,5 +1,5 @@
-// BYO S3-compatible cloud backup: AWS Signature V4 request signing (Web
-// Crypto, no AWS SDK dependency) plus upload/list-latest/download. Works
+// BYO S3-compatible cloud backup: AWS Signature V4 request signing
+// (@noble/hashes, no AWS SDK dependency) plus upload/list-latest/download. Works
 // against any S3-compatible endpoint (AWS S3, DigitalOcean Spaces, MinIO,
 // Cloudflare R2) using credentials the caller supplies and stores
 // themselves — this package never sees or stores credentials beyond the
@@ -10,6 +10,10 @@
 // the whole signing dance duplicated three times. Deduplicated into one
 // signS3Request() here since there's no reason to port the duplication too.
 
+import { sha256 } from '@noble/hashes/sha2.js'
+import { hmac } from '@noble/hashes/hmac.js'
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
+
 export type S3Config = {
   endpoint: string
   bucket: string
@@ -19,33 +23,21 @@ export type S3Config = {
   pathPrefix?: string
 }
 
+// SigV4 hashing/signing via @noble/hashes rather than `crypto.subtle`:
+// Hermes release builds have no global WebCrypto, so the subtle-based
+// implementation only ever worked under Node and in dev debugging (see
+// crypto.ts for the same story on the encryption side).
 async function sha256Hex(data: Uint8Array): Promise<string> {
-  // Uint8Array's `buffer` is typed as ArrayBufferLike (which includes
-  // SharedArrayBuffer), but BufferSource requires a plain ArrayBuffer —
-  // a real Uint8Array from TextEncoder is always backed by one at runtime,
-  // this is purely a type-strictness mismatch in lib.dom.d.ts.
-  const hash = await crypto.subtle.digest('SHA-256', data as BufferSource)
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
+  return bytesToHex(sha256(data))
 }
 
-async function hmacSha256(key: ArrayBuffer, message: string): Promise<ArrayBuffer> {
-  const cryptoKey = await crypto.subtle.importKey(
-    'raw',
-    key,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  )
-  return crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(message))
+async function hmacSha256(key: Uint8Array, message: string): Promise<Uint8Array> {
+  return hmac(sha256, key, utf8ToBytes(message))
 }
 
-async function hmacSha256Hex(key: ArrayBuffer, message: string): Promise<string> {
+async function hmacSha256Hex(key: Uint8Array, message: string): Promise<string> {
   const sig = await hmacSha256(key, message)
-  return Array.from(new Uint8Array(sig))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
+  return bytesToHex(sig)
 }
 
 async function getSignatureKey(
@@ -53,11 +45,8 @@ async function getSignatureKey(
   dateStamp: string,
   region: string,
   service: string,
-): Promise<ArrayBuffer> {
-  const kDate = await hmacSha256(
-    new TextEncoder().encode('AWS4' + secretKey).buffer as ArrayBuffer,
-    dateStamp,
-  )
+): Promise<Uint8Array> {
+  const kDate = await hmacSha256(utf8ToBytes('AWS4' + secretKey), dateStamp)
   const kRegion = await hmacSha256(kDate, region)
   const kService = await hmacSha256(kRegion, service)
   return hmacSha256(kService, 'aws4_request')

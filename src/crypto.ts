@@ -1,5 +1,17 @@
 // Client-side snapshot encryption: passphrase → PBKDF2-SHA256 → AES-256-GCM,
-// via the same Web Crypto (`crypto.subtle`) that s3.ts already depends on.
+// implemented with @noble/hashes + @noble/ciphers (audited, pure JS) rather
+// than `crypto.subtle`: Hermes release builds ship NO global WebCrypto at
+// all, so anything built on `crypto.subtle` works under Node and in dev
+// debugging but throws `Property 'crypto' doesn't exist` on a real device.
+// The envelope layout is unchanged (GCM auth tag appended to the
+// ciphertext, exactly like WebCrypto), so envelopes produced by earlier
+// builds stay decryptable.
+//
+// Entropy: encryption needs random salt/iv. `globalThis.crypto.getRandomValues`
+// is used when present (Node, browsers); on bare Hermes the consuming app
+// must install the `react-native-get-random-values` polyfill — encrypt
+// throws a clear error otherwise. Decryption needs no entropy and works
+// everywhere.
 // Snapshots otherwise sit in the bucket as plaintext JSON of personal data,
 // readable by anyone with bucket access; GCM's auth tag also makes tampering
 // detectable, so a modified ciphertext fails decryption instead of flowing
@@ -10,6 +22,12 @@
 // lived in the old device's SecureStore is gone. The envelope is
 // self-describing (kdf, iterations, salt, iv all inside it) so old backups
 // stay decryptable if defaults change later.
+
+import { sha256 } from '@noble/hashes/sha2.js'
+import { pbkdf2Async } from '@noble/hashes/pbkdf2.js'
+import { utf8ToBytes } from '@noble/hashes/utils.js'
+import { gcm } from '@noble/ciphers/aes.js'
+import { bytesToUtf8 } from '@noble/ciphers/utils.js'
 
 /** On-the-wire shape of an encrypted backup file. */
 export type EncryptedEnvelope = {
@@ -71,26 +89,26 @@ export function base64ToBytes(text: string): Uint8Array {
   return out
 }
 
+function randomBytes(length: number): Uint8Array {
+  const cryptoObj = (globalThis as { crypto?: Crypto }).crypto
+  if (!cryptoObj?.getRandomValues) {
+    throw new Error(
+      'No secure random source: install the react-native-get-random-values ' +
+        'polyfill (import it once at app startup) to encrypt backups on this runtime.',
+    )
+  }
+  return cryptoObj.getRandomValues(new Uint8Array(length))
+}
+
 async function deriveAesKey(
   passphrase: string,
   salt: Uint8Array,
   iterations: number,
-  usage: 'encrypt' | 'decrypt',
-): Promise<CryptoKey> {
-  const baseKey = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(passphrase) as BufferSource,
-    'PBKDF2',
-    false,
-    ['deriveKey'],
-  )
-  return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', hash: 'SHA-256', salt: salt as BufferSource, iterations },
-    baseKey,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    [usage],
-  )
+): Promise<Uint8Array> {
+  return pbkdf2Async(sha256, utf8ToBytes(passphrase), salt, {
+    c: iterations,
+    dkLen: 32,
+  })
 }
 
 /** Encrypts `plaintext` under `passphrase`; returns the serialized envelope (safe to upload as-is). */
@@ -103,14 +121,10 @@ export async function encryptSnapshotText(
     throw new Error('Encryption passphrase must not be empty.')
   }
   const iterations = options?.iterations ?? DEFAULT_PBKDF2_ITERATIONS
-  const salt = crypto.getRandomValues(new Uint8Array(16))
-  const iv = crypto.getRandomValues(new Uint8Array(12))
-  const key = await deriveAesKey(passphrase, salt, iterations, 'encrypt')
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: iv as BufferSource },
-    key,
-    new TextEncoder().encode(plaintext) as BufferSource,
-  )
+  const salt = randomBytes(16)
+  const iv = randomBytes(12)
+  const key = await deriveAesKey(passphrase, salt, iterations)
+  const ciphertext = gcm(key, iv).encrypt(utf8ToBytes(plaintext))
 
   const envelope: EncryptedEnvelope = {
     encryptionVersion: 1,
@@ -118,7 +132,7 @@ export async function encryptSnapshotText(
     iterations,
     salt: bytesToBase64(salt),
     iv: bytesToBase64(iv),
-    ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
+    ciphertext: bytesToBase64(ciphertext),
   }
   return JSON.stringify(envelope)
 }
@@ -175,14 +189,11 @@ export async function decryptSnapshotText(
       passphrase,
       base64ToBytes(envelope.salt),
       envelope.iterations,
-      'decrypt',
     )
-    const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: base64ToBytes(envelope.iv) as BufferSource },
-      key,
-      base64ToBytes(envelope.ciphertext) as BufferSource,
+    const plaintext = gcm(key, base64ToBytes(envelope.iv)).decrypt(
+      base64ToBytes(envelope.ciphertext),
     )
-    return { ok: true, plaintext: new TextDecoder().decode(plaintext) }
+    return { ok: true, plaintext: bytesToUtf8(plaintext) }
   } catch {
     return {
       ok: false,
