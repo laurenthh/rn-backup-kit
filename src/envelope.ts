@@ -15,7 +15,28 @@ export const serializeSnapshot = (snapshot: BackupSnapshot): string => {
   return JSON.stringify(snapshot, null, 2)
 }
 
-export const parseSnapshot = (jsonText: string): ParseSnapshotResult => {
+// Ceiling on snapshot text size before JSON.parse. A snapshot is row data
+// from a personal app's SQLite DB — legitimate ones are a few MB at most. A
+// tampered or corrupted download (e.g. from a compromised bucket) could be
+// arbitrarily large, and JSON.parse would balloon it further in memory and
+// kill the app before any validation runs. 100 MB is far above any real
+// snapshot while still bounded.
+export const MAX_SNAPSHOT_BYTES = 100 * 1024 * 1024
+
+export const parseSnapshot = (
+  jsonText: string,
+  options?: { maxBytes?: number },
+): ParseSnapshotResult => {
+  const maxBytes = options?.maxBytes ?? MAX_SNAPSHOT_BYTES
+  // length is UTF-16 code units, a lower bound on encoded bytes — close
+  // enough for a sanity ceiling.
+  if (jsonText.length > maxBytes) {
+    return {
+      ok: false,
+      reason: `Backup file is too large (over ${Math.round(maxBytes / (1024 * 1024))} MB).`,
+    }
+  }
+
   let parsed: unknown
   try {
     parsed = JSON.parse(jsonText)

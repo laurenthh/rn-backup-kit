@@ -216,3 +216,39 @@ describe('importDatabaseSnapshot', () => {
     expect(snapshot.tables.Location).toEqual([{ id: 'loc-1', name: 'A' }])
   })
 })
+
+describe('restore hardening', () => {
+  it('rejects snapshot rows whose column names are not plain identifiers', async () => {
+    // Mock has no transaction rollback, so only the rejection itself is
+    // asserted — real SQLite rolls the wipe back when the guard throws.
+    const { database } = createMockBackupDatabase()
+    const snapshot: BackupSnapshot = {
+      formatVersion: 1,
+      schemaVersion: 1,
+      exportedAt: '2026-07-06T00:00:00.000Z',
+      tables: {
+        Location: [{ 'id) VALUES (0); DROP TABLE Workout; --': 'boom' }],
+      },
+    }
+
+    await expect(doImport(database, snapshot)).rejects.toThrow(
+      'Unsafe column name',
+    )
+  })
+
+  it('rejects unsafe table names in the caller config', async () => {
+    const { database } = createMockBackupDatabase()
+    await expect(
+      importDatabaseSnapshot({
+        database,
+        tables: ['Location; DROP TABLE Workout'],
+        snapshot: {
+          formatVersion: 1,
+          schemaVersion: 1,
+          exportedAt: '2026-07-06T00:00:00.000Z',
+          tables: {},
+        },
+      }),
+    ).rejects.toThrow('Unsafe table name')
+  })
+})

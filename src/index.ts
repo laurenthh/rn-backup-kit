@@ -23,6 +23,15 @@ export {
 } from './s3'
 
 export {
+  DEFAULT_PBKDF2_ITERATIONS,
+  decryptSnapshotText,
+  encryptSnapshotText,
+  isEncryptedSnapshot,
+  type DecryptResult,
+  type EncryptedEnvelope,
+} from './crypto'
+
+export {
   buildAttachmentManifest,
   uploadAttachments,
   downloadAttachments,

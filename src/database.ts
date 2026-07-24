@@ -52,6 +52,19 @@ export type BackupTableConfig = {
   redactTable?: string
 }
 
+// Table names come from caller config (trusted), but column names come from
+// the snapshot file — untrusted input on restore. Both are interpolated into
+// SQL text (SQLite can't parameterize identifiers), so both must be strict
+// identifiers: no quotes, spaces, or punctuation that could break out of the
+// statement.
+const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+const assertSafeIdentifier = (name: string, kind: 'table' | 'column'): void => {
+  if (!IDENTIFIER_PATTERN.test(name)) {
+    throw new Error(`Unsafe ${kind} name in backup: ${JSON.stringify(name)}`)
+  }
+}
+
 const isSecretSettingsRow = (
   row: Record<string, unknown>,
   secretKeySet: Set<string>,
@@ -74,6 +87,7 @@ export const exportDatabaseSnapshot = async (
 
   const result: Record<string, Record<string, unknown>[]> = {}
   for (const tableName of tables) {
+    assertSafeIdentifier(tableName, 'table')
     const rows = await database.getAllAsync<Record<string, unknown>>(
       `SELECT * FROM ${tableName}`,
     )
@@ -107,6 +121,7 @@ export const importDatabaseSnapshot = async (
   try {
     await database.withExclusiveTransactionAsync(async (txn) => {
       for (const tableName of [...tables].reverse()) {
+        assertSafeIdentifier(tableName, 'table')
         await txn.execAsync(`DELETE FROM ${tableName};`)
       }
 
@@ -123,6 +138,9 @@ export const importDatabaseSnapshot = async (
         const columnNames = Object.keys(rows[0]!)
         if (columnNames.length === 0) {
           continue
+        }
+        for (const columnName of columnNames) {
+          assertSafeIdentifier(columnName, 'column')
         }
         const placeholders = columnNames.map(() => '?').join(', ')
         const sql = `INSERT INTO ${tableName} (${columnNames.join(
